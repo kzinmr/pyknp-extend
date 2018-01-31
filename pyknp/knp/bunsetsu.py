@@ -48,6 +48,14 @@ class Bunsetsu(object):
             match = re.search(r"<正規化代表表記:([^\"\s]+?)>", self.fstring)
             if match:
                 self.repname = match.group(1)
+            self.hrepname = ''
+            match = re.search(r"<主辞代表表記:([^\"\s]+?)>", self.fstring)
+            if match:
+                self.hrepname = match.group(1)
+            self.hprepname = ''
+            match = re.search(r"<主辞’代表表記:([^\"\s]+?)>", self.fstring)
+            if match:
+                self.hprepname = match.group(1)
 
     def push_mrph(self, mrph):
         if self._tag_list:
@@ -75,6 +83,35 @@ class Bunsetsu(object):
             self._pstring = string
         else:
             return self._pstring
+
+    def bnst_head(self):
+        if len(self.tag_list()) == 1:
+            return self.tag_list()[0]
+        for tag in self.tag_list():
+            if '文節内' not in tag.features:
+                return tag
+
+    def recursive_children(self):
+        def __recursive_children(bnst, bs):
+            assert bnst not in bnst.children
+            children = bnst.children
+            if not children:
+                return []
+            for c in children:
+                __recursive_children(c, bs)
+                bs.append(c)
+            return bs
+
+        return __recursive_children(self, [])
+
+    def recursive_adnominals(self):
+        modifiers = []
+        for c in self.children:
+            if '<連体修飾>' in c.fstring:
+                m_children = c.recursive_children()
+                m_children.append(c)
+                modifiers.extend(m_children)
+        return modifiers
 
 
 class BunsetsuTest(unittest.TestCase):
