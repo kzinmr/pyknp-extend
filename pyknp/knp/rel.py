@@ -1,17 +1,15 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import absolute_import
 import re
 
-REL_PAT = "rel type=\"([^\s]+?)\"(?: mode=\"([^>]+?)\")? target=\"([^\s]+?)\"(?: sid=\"(.+?)\" id=\"(.+?)\")?/"
-WRITER_READER_LIST = [u"著者", u"読者"]
-WRITER_READER_CONV_LIST = {u"一人称": u"著者", u"二人称": u"読者"}
+REL_PAT = r"rel type=\"([^\s]+?)\"(?: mode=\"([^>]+?)\")? target=\"([^\s]+?)\"(?: sid=\"(.+?)\" id=\"(.+?)\")?/"
+WRITER_READER_LIST = ["著者", "読者"]
+WRITER_READER_CONV_LIST = {"一人称": "著者", "二人称": "読者"}
 
 
 class Rel(object):
 
-    def __init__(self, fstring, consider_writer_reader=True):
+    def __init__(self, fstring):
         self.atype = None
         self.target = None
         self.sid = None
@@ -19,27 +17,27 @@ class Rel(object):
         self.mode = None
         self.ignore = False
 
-        match = re.findall(r"%s" % REL_PAT, fstring)
-        if len(match) == 0:
+        match = re.findall(REL_PAT, fstring)
+        if not match:
             self.ignore = True
             return
-        atype, mode, target, sid, id = match[0]
-        if mode == u"？":
+        atype, mode, target, sid, tid = match[0]
+        if mode == "？":
             self.ignore = True
-        if target == u"なし":
+        if target == "なし":
             self.ignore = True
 
-        if len(sid) == 0:
+        if not sid:
             sid = None  # dummy
             if target in WRITER_READER_CONV_LIST:
                 target = WRITER_READER_CONV_LIST[target]
-        if len(id) == 0:
-            id = None  # dummy
-        if id is not None:
-            id = int(id)
+        if not tid:
+            tid = None  # dummy
+        if tid is not None:
+            tid = int(tid)
 
         self.atype = atype
         self.target = target
         self.sid = sid
-        self.tid = id
+        self.tid = tid
         self.mode = mode

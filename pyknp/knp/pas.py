@@ -1,16 +1,13 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import absolute_import
 import collections
-import six
 
 
 class Argument(object):
 
     def __init__(self, sid, tid, rep, flag=None):
         assert isinstance(tid, int)
-        assert isinstance(rep, six.text_type)
+        assert isinstance(rep, str)
         self.sid = sid
         self.tid = tid
         self.rep = rep
@@ -31,18 +28,18 @@ class Pas(object):
         raise ValueError
 
     def _parseKnpStyle(self, val):
-        assert isinstance(val, six.text_type)
-        c0 = val.find(u':')
-        c1 = val.find(u':', c0 + 1)
-        self.cfid = val[:c0] + u":" + val[c0 + 1:c1]
+        assert isinstance(val, str)
+        c0 = val.find(':')
+        c1 = val.find(':', c0 + 1)
+        self.cfid = val[:c0] + ":" + val[c0 + 1:c1]
 
-        if val.count(u":") < 2:  # For copula
+        if val.count(":") < 2:  # For copula
             return
 
-        for k in val[c1 + 1:].split(u';'):
-            items = k.split(u"/")
+        for k in val[c1 + 1:].split(';'):
+            items = k.split("/")
             caseflag = items[1]
-            if caseflag == u"U" or caseflag == u"-":
+            if caseflag == "U" or caseflag == "-":
                 continue
 
             mycase = items[0]
@@ -54,4 +51,4 @@ class Pas(object):
             self.arguments[mycase].append(arg)
 
 if __name__ == '__main__':
-    main()
+    pass

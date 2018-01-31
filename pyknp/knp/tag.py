@@ -1,12 +1,11 @@
 #-*- encoding: utf-8 -*-
 
-from __future__ import absolute_import
-from pyknp import MList
-from pyknp import Morpheme
-from pyknp import Features
 import re
 import sys
 import unittest
+from pyknp import MList
+from pyknp import Morpheme
+from pyknp import Features
 
 
 class Tag(object):
@@ -29,12 +28,12 @@ class Tag(object):
         if spec == '+':
             pass
         elif newstyle:
-            items = spec.split(u"\t")
+            items = spec.split("\t")
             self.parent_id = int(items[2])
             self.dpndtype = items[3]
             self.fstring = items[17]
             self.repname = items[6]
-            self.features = Features(self.fstring, u"|", False)
+            self.features = Features(self.fstring, "|", False)
         elif re.match(r'\+ (-?\d+)(\w)(.*)$', spec):
             match = re.match(r'\+ (-?\d+)(\w)(.*)$', spec)
             self.parent_id = int(match.group(1))
@@ -48,7 +47,7 @@ class Tag(object):
         if not newstyle:
             self.repname = ''
             self.features = Features(self.fstring)
-            rep = self.features.get(u"正規化代表表記")
+            rep = self.features.get("正規化代表表記")
             if rep is not None:
                 self.repname = rep
 
@@ -75,23 +74,19 @@ class Tag(object):
 class TagTest(unittest.TestCase):
 
     def test(self):
-        tag_str = u"+ 1D <BGH:構文/こうぶん><文節内><係:文節内><文頭><体言>" \
-            u"<名詞項候補><先行詞候補><正規化代表表記:構文/こうぶん>"
+        tag_str = "+ 1D <BGH:構文/こうぶん><文節内><係:文節内><文頭><体言><名詞項候補><先行詞候補><正規化代表表記:構文/こうぶん>"
         tag = Tag(tag_str, 2)
         self.assertEqual(tag.tag_id, 2)
         self.assertEqual(tag.dpndtype, 'D')
         self.assertEqual(tag.parent_id, 1)
         self.assertEqual(len(tag.mrph_list()), 0)
-        mrph1 = Morpheme(u"構文 こうぶん 構文 名詞 6 普通名詞 1 * 0 * 0 \""
-                         u"代表表記:構文/こうぶん カテゴリ:抽象物\" <代表表記:構文/こうぶん>")
-        mrph2 = Morpheme(u"解析 かいせき 解析 名詞 6 サ変名詞 2 * 0 * 0 \""
-                         u"代表表記:解析/かいせき カテゴリ:抽象物 ドメイン:教育"
-                         u"・学習;科学・技術\" <代表表記:解析/かいせき>")
+        mrph1 = Morpheme("構文 こうぶん 構文 名詞 6 普通名詞 1 * 0 * 0 \"代表表記:構文/こうぶん カテゴリ:抽象物\" <代表表記:構文/こうぶん>")
+        mrph2 = Morpheme("解析 かいせき 解析 名詞 6 サ変名詞 2 * 0 * 0 \"代表表記:解析/かいせき カテゴリ:抽象物 ドメイン:教育・学習;科学・技術\" <代表表記:解析/かいせき>")
         tag.push_mrph(mrph1)
         self.assertEqual(len(tag.mrph_list()), 1)
         tag.push_mrph(mrph2)
         self.assertEqual(len(tag.mrph_list()), 2)
-        self.assertEqual(tag.get_surface(), u'構文解析')
+        self.assertEqual(tag.get_surface(), '構文解析')
 
 if __name__ == '__main__':
     unittest.main()

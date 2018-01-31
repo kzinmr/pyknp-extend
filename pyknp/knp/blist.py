@@ -1,6 +1,10 @@
 #-*- encoding: utf-8 -*-
 
-from __future__ import absolute_import
+import re
+import sys
+import unittest
+import json
+import bisect
 from pyknp import Argument, Pas
 from pyknp import Bunsetsu
 from pyknp import Morpheme
@@ -8,11 +12,6 @@ from pyknp import Tag
 from pyknp import TList
 from pyknp import SynNodes, SynNode
 from pyknp import DrawTree
-import re
-import sys
-import unittest
-import json
-import bisect
 
 
 class BList(DrawTree):
@@ -20,57 +19,32 @@ class BList(DrawTree):
     文節列を保持するオブジェクト．
     """
 
-    def __init__(self, spec='', pattern='EOS', newstyle=False):
+    def __init__(self, spec='', pattern=r'(?:^|\n)EOS($|\n)', newstyle=False):
         self._bnst = []
         self._readonly = False
         self.pattern = pattern
+        self.EOS = 'EOS'
         self.newstyle = newstyle
         self.comment = ''
         self.sid = ''
         self._pinfos = []
-        self.parse(spec)
-        self.set_parent_child()
-        self.set_positions()
+
+        self._parse_spec(spec)
+        self._set_parent_child()
+        self._set_positions()
         self._setPAS()
 
-    def _setPAS(self):
-        """Set PAS to BList with new format"""
-        tag_list = self.tag_list()
-        for pinfo in self._pinfos:
-            pinfo = json.loads(pinfo)
-
-            tag_idx = pinfo.get(u"tid")
-            if tag_idx is None:
-                end = pinfo[u"head_token_end"]
-                tag_idx = bisect.bisect(self.tag_positions, end) - 1
-
-            tag = tag_list[tag_idx]
-            tag.features.pas = Pas()
-            tag.features.pas.cfid = pinfo[u"cfid"]
-
-            for casename, args in pinfo[u"args"].items():
-                for arg in args:
-                    arg_tag_idx = arg.get(u"tid")
-                    if arg_tag_idx is None:
-                        arg_tag_idx = bisect.bisect(self.tag_positions, arg[u"head_token_end"]) - 1
-                    arg_sid = arg.get(u"sid")
-                    if (arg_sid is None) or (len(arg[u"sid"]) == 0):
-                        arg_sid = self.sid
-
-                    arg = Argument(arg_sid, arg_tag_idx, arg[u"rep"])
-                    tag.features.pas.arguments[casename].append(arg)
-
-    def parse(self, spec):
+    def _parse_spec(self, spec):
         for string in spec.split('\n'):
             if string.strip() == "":
                 continue
-            if string.startswith(u'#\t'):
-                items = string.split(u"\t")
-                if len(items) >= 3 and items[1] == u"PAS":
+            if string.startswith('#\t'):
+                items = string.split("\t")
+                if len(items) >= 3 and items[1] == "PAS":
                     self._pinfos.append(items[2])
             elif string.startswith('#'):
                 self.comment += string
-                self.comment += u"\n"
+                self.comment += "\n"
                 match = re.match(r'# S-ID:(.*?)[ $\n]', self.comment)
                 if match:
                     self.sid = match.group(1)
@@ -100,20 +74,33 @@ class BList(DrawTree):
                 pass
             else:
                 mrph = Morpheme(string, len(self.mrph_list()), self.newstyle)
-                if(len(self._bnst)==0):
+                if not self._bnst:
                     bnst = Bunsetsu("*", len(self._bnst))
                     self._bnst.append(bnst)
                 self._bnst[-1].push_mrph(mrph)
 
-    def set_positions(self):
+    def _set_parent_child(self):
+        for bnst in self._bnst:
+            if bnst.parent_id == -1:
+                bnst.parent = None
+            else:
+                bnst.parent = self._bnst[bnst.parent_id]
+                self._bnst[bnst.parent_id].children.append(bnst)
+            for tag in bnst.tag_list():
+                if tag.parent_id == -1:
+                    tag.parent = None
+                else:
+                    tag.parent = self.tag_list()[tag.parent_id]
+                    tag.parent.children.append(tag)
+
+    def _set_positions(self):
         mrphs = self.mrph_list()
-        if(len(mrphs)==0):
+        if not mrphs:
             return
-        begin_position = mrphs[0].span[0] 
-        
+        begin_position = mrphs[0].span[0]
+
         self.mrph_positions = [begin_position]
         self.tag_positions = [begin_position]
-        mrph_positions_map = {}
         for mrph in self.mrph_list():
             self.mrph_positions.append(self.mrph_positions[-1] + len(mrph.midasi))
         for tag in self.tag_list():
@@ -122,26 +109,47 @@ class BList(DrawTree):
             length = self.mrph_positions[end_mrph_index + 1] - self.mrph_positions[start_mrph_index]
             self.tag_positions.append(self.tag_positions[-1] + length)
 
-    def get_tag_span(self, tag_id):
-        return (self.tag_positions[tag_id], self.tag_positions[tag_id + 1] - 1)
+    def _setPAS(self):
+        """Set PAS to BList with new format"""
+        tag_list = self.tag_list()
+        for pinfo in self._pinfos:
+            pinfo = json.loads(pinfo)
 
-    def set_parent_child(self):
-        for bnst in self._bnst:
-            if bnst.parent_id == -1:
-                bnst.parent = None
-            else:
-                bnst.parent = self._bnst[bnst.parent_id]
-                self._bnst[bnst.parent_id].children.append(bnst)
-            for tag in bnst._tag_list:
-                if tag.parent_id == -1:
-                    tag.parent = None
-                else:
-                    tag.parent = self.tag_list()[tag.parent_id]
-                    tag.parent.children.append(tag)
+            tag_idx = pinfo.get("tid")
+            if tag_idx is None:
+                end = pinfo["head_token_end"]
+                tag_idx = bisect.bisect(self.tag_positions, end) - 1
+
+            tag = tag_list[tag_idx]
+            tag.features.pas = Pas()
+            tag.features.pas.cfid = pinfo["cfid"]
+
+            for casename, args in pinfo["args"].items():
+                for arg in args:
+                    arg_tag_idx = arg.get("tid")
+                    if arg_tag_idx is None:
+                        arg_tag_idx = bisect.bisect(self.tag_positions, arg["head_token_end"]) - 1
+                    arg_sid = arg.get("sid")
+                    if arg_sid is None or not arg["sid"]:
+                        arg_sid = self.sid
+
+                    arg = Argument(arg_sid, arg_tag_idx, arg["rep"])
+                    tag.features.pas.arguments[casename].append(arg)
 
     def push_bnst(self, bnst):
         self._bnst.append(bnst)
         self._bnst[bnst.parent].child.append(bnst.bnst_id)
+
+    def set_readonly(self):
+        for bnst in self._bnst:
+            bnst.set_readonly()
+        self._readonly = True
+
+    def all(self):
+        return self.spec()
+
+    def spec(self):
+        return "%s\n%s%s\n" % (self.comment, ''.join(b.spec() for b in self._bnst), self.EOS)
 
     def tag_list(self):
         return [tag for bnst in self._bnst for tag in bnst.tag_list()]
@@ -152,22 +160,51 @@ class BList(DrawTree):
     def bnst_list(self):
         return self._bnst
 
-    def set_readonly(self):
-        for bnst in self._bnst:
-            bnst.set_readonly()
-        self._readonly = True
-
-    def spec(self):
-        return "%s\n%s%s\n" % (self.comment, ''.join(b.spec() for b in self._bnst), self.pattern)
-
-    def all(self):
-        return self.spec()
-
     def __getitem__(self, index):
         return self._bnst[index]
 
     def __len__(self):
         return len(self._bnst)
+
+    def get_tag_span(self, tag_id):
+        return (self.tag_positions[tag_id], self.tag_positions[tag_id + 1] - 1)
+
+    def get_clause_starts(self, concat_clause_in_paren=False, disable_levelA=False):
+        def level_ok(lv):
+            if lv.startswith("B") or lv.startswith("C") or (not disable_levelA and (lv == "A")):
+                return True
+            return False
+
+        starts = [0]
+        paren_level = 0
+        tags = self.tag_list()
+        for idx, tag in enumerate(tags):
+            features = tag.features  # alias
+
+            if features.get("括弧始"):
+                paren_level += 1
+            elif features.get("括弧終"):
+                paren_level -= 1
+            level = features.get("レベル")
+
+            if (not concat_clause_in_paren or paren_level == 0)\
+                and (level is not None) and level_ok(level):
+                kakari = features.get("係")
+                myid = features.get("ID")
+                if kakari in ["連格", "連体"]:
+                    continue
+                elif (features.get("格要素") or features.get("連体修飾"))\
+                    and (features.get("補文") or level == "A"):
+                    continue
+                elif myid in ["〜と（いう）", "〜と（引用）", "〜と（する）", "〜のように", "〜とは",\
+                              "〜くらい〜", "〜の〜", "〜ように", "〜く", "〜に", "（副詞的名詞）"]:
+                    continue
+                elif features.get("〜によれば"):
+                    continue
+
+                if idx != len(tags) - 1:
+                    starts.append(idx + 1)
+        return starts
 
     def draw_bnst_tree(self, fh=None):
         """ 文節列の依存関係を木構造として表現して出力する． """
@@ -184,60 +221,26 @@ class BList(DrawTree):
         """ draw_tree メソッドとの通信用のメソッド． """
         return self.bnst_list()
 
-    def get_clause_starts(self, concat_clause_in_paren=False, disable_levelA=False):
-        def levelOK(lv):
-            if lv.startswith(u"B") or lv.startswith(u"C") or (not disable_levelA and (lv == u"A")):
-                return True
-            return False
-
-        starts = [0]
-        paren_level = 0
-        tags = self.tag_list()
-        for idx, tag in enumerate(tags):
-            features = tag.features  # alias
-
-            if features.get(u"括弧始"):
-                paren_level += 1
-            elif features.get(u"括弧終"):
-                paren_level -= 1
-            level = features.get(u"レベル")
-
-            if (not concat_clause_in_paren or paren_level == 0) and (level is not None) and levelOK(level):
-                kakari = features.get(u"係")
-                myid = features.get(u"ID")
-                if kakari in [u"連格", u"連体"]:
-                    continue
-                elif (features.get(u"格要素") or features.get(u"連体修飾")) and (features.get(u"補文") or level == u"A"):
-                    continue
-                elif myid in [u"〜と（いう）", u"〜と（引用）", u"〜と（する）", u"〜のように", u"〜とは", u"〜くらい〜", u"〜の〜", u"〜ように", u"〜く", u"〜に", u"（副詞的名詞）"]:
-                    continue
-                elif features.get(u"〜によれば"):
-                    continue
-
-                if idx != len(tags) - 1:
-                    starts.append(idx + 1)
-        return starts
-
 
 class BListTest(unittest.TestCase):
 
     def setUp(self):
-        self.result = u"# S-ID:123 KNP:4.2-ffabecc DATE:2015/04/10 SCORE:-18.02647\n" \
-            u"* 1D <BGH:解析/かいせき><文頭><サ変><助詞><連体修飾><体言>\n" \
-            u"+ 1D <BGH:構文/こうぶん><文節内><係:文節内><文頭><体言>\n" \
-            u"構文 こうぶん 構文 名詞 6 普通名詞 1 * 0 * 0 \"代表表記:構文/こうぶん カテゴリ:抽象物\" <代表表記:構文/こうぶん>\n" \
-            u"+ 2D <BGH:解析/かいせき><助詞><連体修飾><体言>\n" \
-            u"解析 かいせき 解析 名詞 6 サ変名詞 2 * 0 * 0 \"代表表記:解析/かいせき カテゴリ:抽象物 ドメイン:教育・学習;科学・技術\" <代表表記:解析/かいせき>\n" \
-            u"の の の 助詞 9 接続助詞 3 * 0 * 0 NIL <かな漢字><ひらがな><付属>\n" \
-            u"* 2D <BGH:実例/じつれい><ヲ><助詞><体言><係:ヲ格>\n" \
-            u"+ 3D <BGH:実例/じつれい><ヲ><助詞><体言><係:ヲ格>\n" \
-            u"実例 じつれい 実例 名詞 6 普通名詞 1 * 0 * 0 \"代表表記:実例/じつれい カテゴリ:抽象物\" <代表表記:実例/じつれい>\n" \
-            u"を を を 助詞 9 格助詞 1 * 0 * 0 NIL <かな漢字><ひらがな><付属>\n" \
-            u"* -1D <BGH:示す/しめす><文末><句点><用言:動>\n" \
-            u"+ -1D <BGH:示す/しめす><文末><句点><用言:動>\n" \
-            u"示す しめす 示す 動詞 2 * 0 子音動詞サ行 5 基本形 2 \"代表表記:示す/しめす\" <代表表記:示す/しめす><正規化代表表記:示す/しめす>\n" \
-            u"。 。 。 特殊 1 句点 1 * 0 * 0 NIL <英記号><記号><文末><付属>\n" \
-            u"EOS"
+        self.result = """# S-ID:123 KNP:4.2-ffabecc DATE:2015/04/10 SCORE:-18.02647
+* 1D <BGH:解析/かいせき><文頭><サ変><助詞><連体修飾><体言>
++ 1D <BGH:構文/こうぶん><文節内><係:文節内><文頭><体言>
+構文 こうぶん 構文 名詞 6 普通名詞 1 * 0 * 0 "代表表記:構文/こうぶん カテゴリ:抽象物" <代表表記:構文/こうぶん>
++ 2D <BGH:解析/かいせき><助詞><連体修飾><体言>
+解析 かいせき 解析 名詞 6 サ変名詞 2 * 0 * 0 "代表表記:解析/かいせき カテゴリ:抽象物 ドメイン:教育・学習;科学・技術" <代表表記:解析/かいせき>
+の の の 助詞 9 接続助詞 3 * 0 * 0 NIL <かな漢字><ひらがな><付属>
+* 2D <BGH:実例/じつれい><ヲ><助詞><体言><係:ヲ格>
++ 3D <BGH:実例/じつれい><ヲ><助詞><体言><係:ヲ格>
+実例 じつれい 実例 名詞 6 普通名詞 1 * 0 * 0 "代表表記:実例/じつれい カテゴリ:抽象物" <代表表記:実例/じつれい>
+を を を 助詞 9 格助詞 1 * 0 * 0 NIL <かな漢字><ひらがな><付属>
+* -1D <BGH:示す/しめす><文末><句点><用言:動>
++ -1D <BGH:示す/しめす><文末><句点><用言:動>
+示す しめす 示す 動詞 2 * 0 子音動詞サ行 5 基本形 2 "代表表記:示す/しめす" <代表表記:示す/しめす><正規化代表表記:示す/しめす>
+。 。 。 特殊 1 句点 1 * 0 * 0 NIL <英記号><記号><文末><付属>
+EOS"""
 
     def test(self):
         blist = BList(self.result)
@@ -245,7 +248,7 @@ class BListTest(unittest.TestCase):
         self.assertEqual(len(blist.tag_list()), 4)
         self.assertEqual(len(blist.mrph_list()), 7)
         self.assertEqual(''.join([mrph.midasi for mrph in blist.mrph_list()]),
-                         u'構文解析の実例を示す。')
+                         '構文解析の実例を示す。')
         self.assertEqual(blist.sid, '123')
         # Check parent/children relations
         self.assertEqual(blist[1].parent, blist[2])
@@ -266,7 +269,7 @@ class BListTest(unittest.TestCase):
 class BList2Test(unittest.TestCase):
 
     def setUp(self):
-        self.result = u"""# S-ID:foo KNP++:a9af601
+        self.result = """# S-ID:foo KNP++:a9af601
 +	0	3	D	1;3	母が	母/ぼ	-	-	-	-	-	-	-	-	-	-	BP:Phrase|CFG_RULE_ID:1|BOS|BP_TYPE|ガ|助詞
 -	1	0	0	0	母	母/ぼ	ぼ	母	名詞	6	普通名詞	1	*	0	*	0	漢字読み:音|漢字|CONT|RelWord-105522
 -	3	1;2	1	1	が	*	が	が	助詞	9	接続助詞	3	*	0	*	0	FUNC|Ｔ固有付属|Ｔ固有任意
@@ -287,7 +290,7 @@ EOS"""
         self.assertEqual(len(blist.tag_list()), 4)
         self.assertEqual(len(blist.mrph_list()), 7)
         self.assertEqual(''.join([mrph.midasi for mrph in blist.mrph_list()]),
-                         u'母が姉に弁当を渡した')
+                         '母が姉に弁当を渡した')
         self.assertEqual(blist.sid, 'foo')
         self.assertEqual(blist[1].parent, blist[3])
         self.assertEqual(blist[1].parent_id, 3)
@@ -310,12 +313,12 @@ EOS"""
         self.assertEqual(tags[0].features.pas, None)
         self.assertEqual(tags[1].features.pas, None)
         self.assertEqual(tags[2].features.pas, None)
-        self.assertEqual(tags[3].features.pas.cfid, u"渡す/わたす:動1")
+        self.assertEqual(tags[3].features.pas.cfid, "渡す/わたす:動1")
         args = tags[3].features.pas.arguments
         self.assertEqual(len(args), 3)
-        self.assertEqual(len(args[u"ヲ"]), 1)
-        self.assertEqual(args[u"ヲ"][0].sid, u"foo")
-        self.assertEqual(args[u"ヲ"][0].tid, 2)
+        self.assertEqual(len(args["ヲ"]), 1)
+        self.assertEqual(args["ヲ"][0].sid, "foo")
+        self.assertEqual(args["ヲ"][0].tid, 2)
 
 if __name__ == '__main__':
     unittest.main()
