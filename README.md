@@ -1,5 +1,6 @@
 # pyknp-extend
 extension of pyknp=0.3
+- also available with `import pyknp`
 - Python3 supported only
 - add some shortcut features
 - document management and anaphora analysis (TBU)
